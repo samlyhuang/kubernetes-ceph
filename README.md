@@ -1,6 +1,6 @@
 # kubernetes-ceph
-kubernetes中使用ceph rbd作为持久化存储
-创建ceph-secret
+## kubernetes中使用ceph rbd作为持久化存储
+1、创建ceph-secret
 
 接下来我们来创建ceph-secret这个k8s secret对象，这个secret对象用于k8s volume插件访问ceph集群：
 获取client.admin的keyring值，并用base64编码：
@@ -29,105 +29,112 @@ ceph-secret           Opaque                                1         16s
 
 1、创建disk image
 
-$ rbd create ceph-image -s 128 #考虑后续format快捷，这里只用了128M，仅适用于Demo哦。
-ceph osd pool create rbd 100
-# rbd create ceph-image -s 128
-# rbd info rbd/ceph-image
-rbd image 'ceph-image':
-    size 128 MB in 32 objects
-    order 22 (4096 kB objects)
-    block_name_prefix: rbd_data.37202ae8944a
-    format: 2
-    features: layering
-    flags:
-配置
-ceph osd crush tunables legacy
-rbd feature disable ceph-image exclusive-lock, object-map, fast-diff, deep-flatten
+    $ rbd create ceph-image -s 128
+    ceph osd pool create rbd 100
+    # rbd create ceph-image -s 128
+    # rbd info rbd/ceph-image
+    rbd image 'ceph-image':
+        size 128 MB in 32 objects
+        order 22 (4096 kB objects)
+        block_name_prefix: rbd_data.37202ae8944a
+        format: 2
+        features: layering
+        flags:
+    配置
+    ceph osd crush tunables legacy
+    rbd feature disable ceph-image exclusive-lock, object-map, fast-diff, deep-flatten
 
 如果这里不先创建一个ceph-image，后续Pod启动时，会出现如下的一些错误，比如pod始终处于ContainerCreating状态：
-# kubectl get pod
-NAME                        READY     STATUS              RESTARTS   AGE
-ceph-pod1                   0/1       ContainerCreating   0          13s
+
+    # kubectl get pod
+    NAME                        READY     STATUS              RESTARTS   AGE
+    ceph-pod1                   0/1       ContainerCreating   0          13s
 
 如果出现这种错误情况，可以查看/var/log/upstart/kubelet.log，你也许能看到如下错误信息：
-I1107 06:02:27.500247   22037 operation_executor.go:768] MountVolume.SetUp succeeded for volume "kubernetes.io/secret/01d049c6-9430-11e6-ba01-00163e1625a9-default-token-40z0x" (spec.Name: "default-token-40z0x") pod "01d049c6-9430-11e6-ba01-00163e1625a9" (UID: "01d049c6-9430-11e6-ba01-00163e1625a9").
-I1107 06:03:08.499628   22037 reconciler.go:294] MountVolume operation started for volume "kubernetes.io/rbd/ea848a49-a46b-11e6-ba01-00163e1625a9-ceph-pv" (spec.Name: "ceph-pv") to pod "ea848a49-a46b-11e6-ba01-00163e1625a9" (UID: "ea848a49-a46b-11e6-ba01-00163e1625a9").
-E1107 06:03:09.532348   22037 disk_manager.go:56] failed to attach disk
-E1107 06:03:09.532402   22037 rbd.go:228] rbd: failed to setup mount /var/lib/kubelet/pods/ea848a49-a46b-11e6-ba01-00163e1625a9/volumes/kubernetes.io~rbd/ceph-pv rbd: map failed exit status 2 rbd: sysfs write failed
-In some cases useful info is found in syslog - try "dmesg | tail" or so.
-rbd: map failed: (2) No such file or directory
+
+    I1107 06:02:27.500247   22037 operation_executor.go:768] MountVolume.SetUp succeeded for volume "kubernetes.io/secret/01d049c6-9430-11e6-ba01-00163e1625a9-default-token-40z0x" (spec.Name: "default-token-40z0x") pod "01d049c6-9430-11e6-ba01-00163e1625a9" (UID: "01d049c6-9430-11e6-ba01-00163e1625a9").
+    I1107 06:03:08.499628   22037 reconciler.go:294] MountVolume operation started for volume "kubernetes.io/rbd/ea848a49-a46b-11e6-ba01-00163e1625a9-ceph-pv" (spec.Name: "ceph-pv") to pod "ea848a49-a46b-11e6-ba01-00163e1625a9" (UID: "ea848a49-a46b-11e6-ba01-00163e1625a9").
+    E1107 06:03:09.532348   22037 disk_manager.go:56] failed to attach disk
+    E1107 06:03:09.532402   22037 rbd.go:228] rbd: failed to setup mount /var/lib/kubelet/pods/ea848a49-a46b-11e6-ba01-00163e1625a9/volumes/kubernetes.io~rbd/ceph-pv rbd: map failed exit status 2 rbd: sysfs write failed
+    In some cases useful info is found in syslog - try "dmesg | tail" or so.
+    rbd: map failed: (2) No such file or directory
+
 2、创建PV
-
 我们直接复用之前创建的ceph-secret对象，PV的描述文件ceph-pv.yaml如下：
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: ceph-pv
-spec:
-  capacity:
-    storage: 1Gi
-  accessModes:
-    - ReadWriteOnce
-  rbd:
-    monitors:
-      - 10.47.136.60:6789
-    pool: rbd
-    image: ceph-image
-    user: admin
-    secretRef:
-      name: ceph-secret
-    fsType: ext4
-    readOnly: false
-  persistentVolumeReclaimPolicy: Recycle
-执行创建操作：
-# kubectl create -f ceph-pv.yaml
-persistentvolume "ceph-pv" created
 
-# kubectl get pv
-NAME      CAPACITY   ACCESSMODES   RECLAIMPOLICY   STATUS      CLAIM     REASON    AGE
-ceph-pv   1Gi        RWO           Recycle         Available                       7s
+    apiVersion: v1
+    kind: PersistentVolume
+    metadata:
+      name: ceph-pv
+    spec:
+      capacity:
+        storage: 1Gi
+      accessModes:
+        - ReadWriteOnce
+      rbd:
+        monitors:
+          - 10.47.136.60:6789
+        pool: rbd
+        image: ceph-image
+        user: admin
+        secretRef:
+          name: ceph-secret
+        fsType: ext4
+        readOnly: false
+      persistentVolumeReclaimPolicy: Recycle
+执行创建操作：
+
+    # kubectl create -f ceph-pv.yaml
+    persistentvolume "ceph-pv" created
+
+    # kubectl get pv
+    NAME      CAPACITY   ACCESSMODES   RECLAIMPOLICY   STATUS      CLAIM     REASON    AGE
+    ceph-pv   1Gi        RWO           Recycle         Available                       7s
 3、创建PVC
 
 pvc是Pod对Pv的请求，将请求做成一种资源，便于管理以及pod复用。我们用到的pvc描述文件ceph-pvc.yaml如下：
-kind: PersistentVolumeClaim
-apiVersion: v1
-metadata:
-  name: ceph-claim
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
+
+    kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      name: ceph-claim
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Gi
 
 执行创建操作：
-# kubectl create -f ceph-pvc.yaml
-persistentvolumeclaim "ceph-claim" created
 
-# kubectl get pvc
-NAME         STATUS    VOLUME    CAPACITY   ACCESSMODES   AGE
-ceph-claim   Bound     ceph-pv   1Gi        RWO           12s
+    # kubectl create -f ceph-pvc.yaml
+    persistentvolumeclaim "ceph-claim" created
+
+    # kubectl get pvc
+    NAME         STATUS    VOLUME    CAPACITY   ACCESSMODES   AGE
+    ceph-claim   Bound     ceph-pv   1Gi        RWO           12s
 
 4、创建挂载ceph RBD的pod
 
 pod描述文件ceph-pod1.yaml如下：
-apiVersion: v1
-kind: Pod
-metadata:
-  name: ceph-pod1
-spec:
-  containers:
-  - name: ceph-busybox1
-    image: busybox
-    command: ["sleep", "600000"]
-    volumeMounts:
-    - name: ceph-vol1
-      mountPath: /usr/share/busybox
-      readOnly: false
-  volumes:
-  - name: ceph-vol1
-    persistentVolumeClaim:
-      claimName: ceph-claim
+
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: ceph-pod1
+    spec:
+      containers:
+      - name: ceph-busybox1
+        image: busybox
+        command: ["sleep", "600000"]
+        volumeMounts:
+        - name: ceph-vol1
+          mountPath: /usr/share/busybox
+          readOnly: false
+      volumes:
+      - name: ceph-vol1
+        persistentVolumeClaim:
+          claimName: ceph-claim
 创建pod操作：
 # kubectl create -f ceph-pod1.yaml
 pod "ceph-pod1" created
