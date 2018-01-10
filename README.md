@@ -1,5 +1,10 @@
 # kubernetes-ceph
 ## kubernetes中使用ceph rbd作为持久化存储
+
+### 环境
+     docker 17.10
+     kubernetes 1.6.2
+     ceph 12.2.1
 #### 1、创建ceph-secret
 
 创建ceph-secret这个k8s secret对象，这个secret对象用于k8s volume插件访问ceph集群：
