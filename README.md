@@ -186,7 +186,7 @@ pod描述文件ceph-pod1.yaml如下：
     NAME                                     READY     STATUS    RESTARTS   AGE
     mysql-server1-1657545038-4gnrd           1/1       Running   13         49d
 
-查看该镜像使用率
+查看该镜像使用率（最后一条）:
 
     [root@node2 ~]# df -lh
     文件系统                 容量  已用  可用 已用% 挂载点
