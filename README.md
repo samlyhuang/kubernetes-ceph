@@ -4,6 +4,7 @@
 
 创建ceph-secret这个k8s secret对象，这个secret对象用于k8s volume插件访问ceph集群：
 获取client.admin的keyring值，并用base64编码：
+
     # ceph auth get-key client.admin
     AQCBbgFa4tFTDxAA5Y4fvdDL3sntAyLFmnQwpQ==
     
