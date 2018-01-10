@@ -146,7 +146,7 @@ pod描述文件ceph-pod1.yaml如下：
               readOnly: false
             env:
             - name: MYSQL_ROOT_PASSWORD
-              value: "lyhuang459"
+              value: "******"
             ports:
             - containerPort: 3306
           imagePullSecrets:
