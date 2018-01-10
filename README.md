@@ -1,23 +1,24 @@
 # kubernetes-ceph
 ## kubernetes中使用ceph rbd作为持久化存储
-1、创建ceph-secret
-
+#### 1、创建ceph-secret
 接下来我们来创建ceph-secret这个k8s secret对象，这个secret对象用于k8s volume插件访问ceph集群：
 获取client.admin的keyring值，并用base64编码：
-# ceph auth get-key client.admin
-AQBiKBxYuPXiJRAAsupnTBsURoWzb0k00oM3iQ==
-
-# echo "AQBiKBxYuPXiJRAAsupnTBsURoWzb0k00oM3iQ=="|base64
-QVFCaUtCeFl1UFhpSlJBQXN1cG5UQnNVUm9XemIwazAwb00zaVE9PQo=
+    # ceph auth get-key client.admin
+    AQCBbgFa4tFTDxAA5Y4fvdDL3sntAyLFmnQwpQ==
+    
+    # echo "AQCBbgFa4tFTDxAA5Y4fvdDL3sntAyLFmnQwpQ=="|base64
+    QVFDQmJnRmE0dEZURHhBQTVZNGZ2ZERMM3NudEF5TEZtblF3cFE9PQo=
+    
 在k8s-cephrbd下建立ceph-secret.yaml文件，data下的key字段值即为上面得到的编码值：
-//ceph-secret.yaml
-
-apiVersion: v1
-kind: Secret
-metadata:
-  name: ceph-secret
-data:
-  key: QVFCaUtCeFl1UFhpSlJBQXN1cG5UQnNVUm9XemIwazAwb00zaVE9PQo=
+    //ceph-secret.yaml
+    
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: ceph-secret
+    data:
+      key: QVFDQmJnRmE0dEZURHhBQTVZNGZ2ZERMM3NudEF5TEZtblF3cFE9PQo=
+      
 创建ceph-secret：
 # kubectl create -f ceph-secret.yaml
 secret "ceph-secret" created
@@ -29,20 +30,25 @@ ceph-secret           Opaque                                1         16s
 
 1、创建disk image
 
-    $ rbd create ceph-image -s 128
+    $ ceph osd pool create rbd 100
     ceph osd pool create rbd 100
-    # rbd create ceph-image -s 128
-    # rbd info rbd/ceph-image
-    rbd image 'ceph-image':
-        size 128 MB in 32 objects
-        order 22 (4096 kB objects)
-        block_name_prefix: rbd_data.37202ae8944a
-        format: 2
-        features: layering
-        flags:
-    配置
-    ceph osd crush tunables legacy
-    rbd feature disable ceph-image exclusive-lock, object-map, fast-diff, deep-flatten
+    # rbd create mysql-server1 -s 4096
+    [root@server1 containers]# rbd info rbd/mysql-server1
+    rbd image 'mysql-server1':
+            size 4096 MB in 1024 objects
+            order 22 (4096 kB objects)
+            block_name_prefix: rbd_data.6ee042ae8944a
+            format: 2
+            features: layering
+            flags: 
+            create_timestamp: Mon Nov 13 14:58:27 2017
+设置ceph元数据算法：
+
+    ceph osd crush tunables legacy
+    
+关闭mysql-server1中内核功能参数：
+    
+    rbd feature disable mysql-server1 exclusive-lock, object-map, fast-diff, deep-flatten
 
 如果这里不先创建一个ceph-image，后续Pod启动时，会出现如下的一些错误，比如pod始终处于ContainerCreating状态：
 
@@ -65,17 +71,17 @@ ceph-secret           Opaque                                1         16s
     apiVersion: v1
     kind: PersistentVolume
     metadata:
-      name: ceph-pv
+      name: ceph-pv-mysql-server1
     spec:
       capacity:
-        storage: 1Gi
+        storage: 4Gi
       accessModes:
         - ReadWriteOnce
       rbd:
         monitors:
-          - 10.47.136.60:6789
+          - 192.168.31.150:6789
         pool: rbd
-        image: ceph-image
+        image: mysql-server1
         user: admin
         secretRef:
           name: ceph-secret
@@ -88,8 +94,10 @@ ceph-secret           Opaque                                1         16s
     persistentvolume "ceph-pv" created
 
     # kubectl get pv
-    NAME      CAPACITY   ACCESSMODES   RECLAIMPOLICY   STATUS      CLAIM     REASON    AGE
-    ceph-pv   1Gi        RWO           Recycle         Available                       7s
+    [root@server1 server1]# kubectl get pv
+    NAME                   CAPACITY   ACCESSMODES   RECLAIMPOLICY   STATUS    CLAIM                          STORAGECLASS   REASON    AGE
+    ceph-pv-mysql-server1  4Gi        RWO           Recycle         Bound     default/ceph-pvc-mysql-server1                          58d
+    
 3、创建PVC
 
 pvc是Pod对Pv的请求，将请求做成一种资源，便于管理以及pod复用。我们用到的pvc描述文件ceph-pvc.yaml如下：
@@ -97,13 +105,13 @@ pvc是Pod对Pv的请求，将请求做成一种资源，便于管理以及pod复
     kind: PersistentVolumeClaim
     apiVersion: v1
     metadata:
-      name: ceph-claim
+      name: ceph-pvc-mysql-server1
     spec:
       accessModes:
         - ReadWriteOnce
       resources:
         requests:
-          storage: 1Gi
+          storage: 4Gi
 
 执行创建操作：
 
@@ -111,145 +119,82 @@ pvc是Pod对Pv的请求，将请求做成一种资源，便于管理以及pod复
     persistentvolumeclaim "ceph-claim" created
 
     # kubectl get pvc
-    NAME         STATUS    VOLUME    CAPACITY   ACCESSMODES   AGE
-    ceph-claim   Bound     ceph-pv   1Gi        RWO           12s
+    NAME                          STATUS    VOLUME                       CAPACITY   ACCESSMODES   STORAGECLASS   AGE
+    ceph-pvc-mysql-server1        Bound     ceph-pv-mysql-server1        4Gi        RWO                          58d
 
 4、创建挂载ceph RBD的pod
 
 pod描述文件ceph-pod1.yaml如下：
 
-    apiVersion: v1
-    kind: Pod
+    apiVersion: extensions/v1beta1
+    kind: Deployment
     metadata:
-      name: ceph-pod1
+      name: mysql-server1
     spec:
-      containers:
-      - name: ceph-busybox1
-        image: busybox
-        command: ["sleep", "600000"]
-        volumeMounts:
-        - name: ceph-vol1
-          mountPath: /usr/share/busybox
-          readOnly: false
-      volumes:
-      - name: ceph-vol1
-        persistentVolumeClaim:
-          claimName: ceph-claim
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            app: mysql-server1
+        spec:
+          containers:
+          - name: mysql-server1
+            image: 192.168.31.150:5000/mysql:latest
+            volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+              readOnly: false
+            env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: "lyhuang459"
+            ports:
+            - containerPort: 3306
+          imagePullSecrets:
+            - name: myregistrykey
+          volumes:
+          #- name: mysql-runfile
+          #  hostPath:
+          #    path: /share/kubernetes/mysql/server1/test
+          - name: mysql-data
+            persistentVolumeClaim:
+              claimName: ceph-pvc-mysql-server1
+    ---
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: mysql-server1
+      labels:
+        app: mysql-server1
+    spec:
+      type: NodePort           
+      ports:
+      - port: 3306                     #内部接口
+      selector:
+        app: mysql-server1
 创建pod操作：
-# kubectl create -f ceph-pod1.yaml
-pod "ceph-pod1" created
+    # kubectl create -f ceph-pod1.yaml
+    pod "ceph-pod1" created
+    
+    # kubectl get pod
+    NAME                        READY     STATUS              RESTARTS   AGE
+    mysql-server1                   0/1       ContainerCreating   0          13s
 
-# kubectl get pod
-NAME                        READY     STATUS              RESTARTS   AGE
-ceph-pod1                   0/1       ContainerCreating   0          13s
-Pod还处于ContainerCreating状态。pod的创建，尤其是挂载pv的Pod的创建需要一小段时间，耐心等待一下，我们可以查看一下/var/log/upstart/kubelet.log：
-I1107 11:44:38.768541   22037 mount_linux.go:272] `fsck` error fsck from util-linux 2.20.1
+    # kubectl get pod
+    [root@server1 server1]# kubectl get pod
+    NAME                                     READY     STATUS    RESTARTS   AGE
+    mysql-server1-1657545038-4gnrd           1/1       Running   13         49d
 
-fsck.ext2: Bad magic number in super-block while trying to open /dev/rbd1
-/dev/rbd1:
-The superblock could not be read or does not describe a valid ext2/ext3/ext4
-filesystem.  If the device is valid and it really contains an ext2/ext3/ext4
-filesystem (and not swap or ufs or something else), then the superblock
-is corrupt, and you might try running e2fsck with an alternate superblock:
-    e2fsck -b 8193 <device>
- or
-    e2fsck -b 32768 <device>
+查看该镜像使用率
 
-E1107 11:44:38.774080   22037 mount_linux.go:110] Mount failed: exit status 32
-Mounting arguments: /dev/rbd1 /var/lib/kubelet/plugins/kubernetes.io/rbd/rbd/rbd-image-ceph-image ext4 [defaults]
-Output: mount: wrong fs type, bad option, bad superblock on /dev/rbd1,
-       missing codepage or helper program, or other error
-       In some cases useful info is found in syslog - try
-       dmesg | tail  or so
+    [root@node2 ~]# df -lh
+    文件系统                 容量  已用  可用 已用% 挂载点
+    /dev/mapper/centos-root   36G  8.2G   28G   23% /
+    devtmpfs                 1.2G     0  1.2G    0% /dev
+    tmpfs                    1.2G   84K  1.2G    1% /dev/shm
+    tmpfs                    1.2G   89M  1.1G    8% /run
+    tmpfs                    1.2G     0  1.2G    0% /sys/fs/cgroup
+    /dev/sda1                497M  157M  341M   32% /boot
+    /dev/sdb1                 97M  5.4M   92M    6% /var/lib/ceph/osd/ceph-2
+    tmpfs                    231M   16K  231M    1% /run/user/42
+    /dev/rbd0                3.9G  226M  3.4G    7% /var/lib/kubelet/plugins/kubernetes.io/rbd/rbd/rbd-image-mysql-server1
 
-I1107 11:44:38.839148   22037 mount_linux.go:292] Disk "/dev/rbd1" appears to be unformatted, attempting to format as type: "ext4" with options: [-E lazy_itable_init=0,lazy_journal_init=0 -F /dev/rbd1]
-I1107 11:44:39.152689   22037 mount_linux.go:297] Disk successfully formatted (mkfs): ext4 - /dev/rbd1 /var/lib/kubelet/plugins/kubernetes.io/rbd/rbd/rbd-image-ceph-image
-I1107 11:44:39.220223   22037 operation_executor.go:768] MountVolume.SetUp succeeded for volume "kubernetes.io/rbd/811a57ee-a49c-11e6-ba01-00163e1625a9-ceph-pv" (spec.Name: "ceph-pv") pod "811a57ee-a49c-11e6-ba01-00163e1625a9" (UID: "811a57ee-a49c-11e6-ba01-00163e1625a9").
-可以看到，k8s通过fsck发现这个image是一个空image，没有fs在里面，于是默认采用ext4为其格式化，成功后，再行挂载。等待一会后，我们看到ceph-pod1成功run起来了：
-# kubectl get pod
-NAME                        READY     STATUS    RESTARTS   AGE
-ceph-pod1                   1/1       Running   0          4m
-
-# docker ps
-CONTAINER ID        IMAGE                                                 COMMAND                  CREATED             STATUS              PORTS               NAMES
-f50bb8c31b0f        busybox                                               "sleep 600000"           4 hours ago         Up 4 hours                              k8s_ceph-busybox1.c0c0379f_ceph-pod1_default_811a57ee-a49c-11e6-ba01-00163e1625a9_9d910a29
-
-# docker exec 574b8069e548 df -h
-Filesystem                Size      Used Available Use% Mounted on
-none                     39.2G     20.9G     16.3G  56% /
-tmpfs                     1.9G         0      1.9G   0% /dev
-tmpfs                     1.9G         0      1.9G   0% /sys/fs/cgroup
-/dev/vda1                39.2G     20.9G     16.3G  56% /dev/termination-log
-/dev/vda1                39.2G     20.9G     16.3G  56% /etc/resolv.conf
-/dev/vda1                39.2G     20.9G     16.3G  56% /etc/hostname
-/dev/vda1                39.2G     20.9G     16.3G  56% /etc/hosts
-shm                      64.0M         0     64.0M   0% /dev/shm
-/dev/rbd1               120.0M      1.5M    109.5M   1% /usr/share/busybox
-tmpfs                     1.9G     12.0K      1.9G   0% /var/run/secrets/kubernetes.io/serviceaccount
-tmpfs                     1.9G         0      1.9G   0% /proc/kcore
-tmpfs                     1.9G         0      1.9G   0% /proc/timer_list
-tmpfs                     1.9G         0      1.9G   0% /proc/timer_stats
-tmpfs                     1.9G         0      1.9G   0% /proc/sched_debug
-六、简单测试
-
-这一节我们要对cephrbd作为k8s PV的效用做一个简单测试。测试步骤：
-1) 在container中，向挂载的cephrbd写入数据；
-2) 删除ceph-pod1
-3) 重新创建ceph-pod1，查看数据是否还存在。
-我们首先通过touch 、vi等命令向ceph-pod1挂载的cephrbd volume写入数据：我们通过容器f50bb8c31b0f 创建/usr/share/busybox/hello-ceph.txt，并向文件写入”hello ceph”一行字符串并保存。
-# docker exec -it f50bb8c31b0f touch /usr/share/busybox/hello-ceph.txt
-# docker exec -it f50bb8c31b0f vi /usr/share/busybox/hello-ceph.txt
-# docker exec -it f50bb8c31b0f cat /usr/share/busybox/hello-ceph.txt
-hello ceph
-接下来删除ceph-pod1：
-# kubectl get pod
-NAME                        READY     STATUS    RESTARTS   AGE
-ceph-pod1                   1/1       Running   0          4h
-
-# kubectl delete pod/ceph-pod1
-pod "ceph-pod1" deleted
-
-# kubectl get pod
-NAME                        READY     STATUS        RESTARTS   AGE
-ceph-pod1                   1/1       Terminating   0          4h
-
-# kubectl get pv,pvc
-NAME         CAPACITY   ACCESSMODES   RECLAIMPOLICY   STATUS    CLAIM                REASON    AGE
-pv/ceph-pv   1Gi        RWO           Recycle         Bound     default/ceph-claim             4h
-NAME             STATUS    VOLUME    CAPACITY   ACCESSMODES   AGE
-pvc/ceph-claim   Bound     ceph-pv   1Gi        RWO           4h
-
-可以看到ceph-pod1的删除需要一段时间，这段时间pod一直处于“ Terminating”状态。同时，我们看到pod的删除并没有影响到pv和pvc object，它们依旧存在。
-最后，我们再次来创建一下一个使用同一个pvc的pod，为了避免“不必要”的麻烦，我们建立一个名为ceph-pod2.yaml的描述文件：
-apiVersion: v1
-kind: Pod
-metadata:
-  name: ceph-pod2
-spec:
-  containers:
-  - name: ceph-busybox2
-    image: busybox
-    command: ["sleep", "600000"]
-    volumeMounts:
-    - name: ceph-vol2
-      mountPath: /usr/share/busybox
-      readOnly: false
-  volumes:
-  - name: ceph-vol2
-    persistentVolumeClaim:
-      claimName: ceph-claim
-创建ceph-pod2：
-# kubectl create -f ceph-pod2.yaml
-pod "ceph-pod2" created
-
-root@node1:~/k8stest/k8s-cephrbd# kubectl get pod
-NAME                        READY     STATUS    RESTARTS   AGE
-ceph-pod2                   1/1       Running   0          14s
-
-root@node1:~/k8stest/k8s-cephrbd# docker ps
-CONTAINER ID        IMAGE                                                 COMMAND                  CREATED             STATUS              PORTS               NAMES
-574b8069e548        busybox                                               "sleep 600000"           11 seconds ago      Up 10 seconds                           k8s_ceph-busybox2.c5e637a1_ceph-pod2_default_f4aeebd6-a4c3-11e6-ba01-00163e1625a9_fc94c0fe
-查看数据是否依旧存在：
-# docker exec -it 574b8069e548 cat /usr/share/busybox/hello-ceph.txt
-hello ceph
-数据完好无损的被ceph-pod2读取到了！
