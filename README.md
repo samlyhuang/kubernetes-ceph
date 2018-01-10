@@ -1,7 +1,8 @@
 # kubernetes-ceph
 ## kubernetes中使用ceph rbd作为持久化存储
 #### 1、创建ceph-secret
-接下来我们来创建ceph-secret这个k8s secret对象，这个secret对象用于k8s volume插件访问ceph集群：
+
+创建ceph-secret这个k8s secret对象，这个secret对象用于k8s volume插件访问ceph集群：
 获取client.admin的keyring值，并用base64编码：
     # ceph auth get-key client.admin
     AQCBbgFa4tFTDxAA5Y4fvdDL3sntAyLFmnQwpQ==
@@ -65,7 +66,7 @@
     In some cases useful info is found in syslog - try "dmesg | tail" or so.
     rbd: map failed: (2) No such file or directory
 
-2、创建PV
+#### 2、创建PV
 我们直接复用之前创建的ceph-secret对象，PV的描述文件ceph-pv.yaml如下：
 
     apiVersion: v1
@@ -97,8 +98,8 @@
     [root@server1 server1]# kubectl get pv
     NAME                   CAPACITY   ACCESSMODES   RECLAIMPOLICY   STATUS    CLAIM                          STORAGECLASS   REASON    AGE
     ceph-pv-mysql-server1  4Gi        RWO           Recycle         Bound     default/ceph-pvc-mysql-server1                          58d
-    
-3、创建PVC
+    
+#### 3、创建PVC
 
 pvc是Pod对Pv的请求，将请求做成一种资源，便于管理以及pod复用。我们用到的pvc描述文件ceph-pvc.yaml如下：
 
@@ -122,7 +123,7 @@ pvc是Pod对Pv的请求，将请求做成一种资源，便于管理以及pod复
     NAME                          STATUS    VOLUME                       CAPACITY   ACCESSMODES   STORAGECLASS   AGE
     ceph-pvc-mysql-server1        Bound     ceph-pv-mysql-server1        4Gi        RWO                          58d
 
-4、创建挂载ceph RBD的pod
+#### 4、创建挂载ceph RBD的pod
 
 pod描述文件ceph-pod1.yaml如下：
 
