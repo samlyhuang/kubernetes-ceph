@@ -20,12 +20,12 @@
       key: QVFDQmJnRmE0dEZURHhBQTVZNGZ2ZERMM3NudEF5TEZtblF3cFE9PQo=
       
 创建ceph-secret：
-# kubectl create -f ceph-secret.yaml
-secret "ceph-secret" created
-
-# kubectl get secret
-NAME                  TYPE                                  DATA      AGE
-ceph-secret           Opaque                                1         16s
+        # kubectl create -f ceph-secret.yaml
+        secret "ceph-secret" created
+        
+        # kubectl get secret
+        NAME                  TYPE                                  DATA      AGE
+        ceph-secret           Opaque                                1         16s
 
 
 1、创建disk image
